@@ -1,0 +1,39 @@
+version: 2
+updates:
+  # ---- API (NestJS) ----
+  - package-ecosystem: "npm"
+    directory: "/api"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    # Group minor/patch bumps into one PR to reduce noise; majors come separately
+    # so breaking changes get individual review.
+    groups:
+      api-minor-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore(deps)"
+    labels: ["dependencies", "api"]
+
+  # ---- Frontend (Next.js) ----
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      frontend-minor-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore(deps)"
+    labels: ["dependencies", "frontend"]
+
+  # ---- GitHub Actions themselves (keep pinned actions current + secure) ----
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
+    labels: ["dependencies", "github-actions"]
