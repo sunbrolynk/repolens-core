@@ -38,9 +38,8 @@ export class StorageService {
    * Defense in depth, in order:
    *   1. Type/empty check.
    *   2. cuid-shape allowlist regex (no separators/dots can match).
-   *   3. Reduce to path.basename and require it to equal the input — this makes
-   *      "no path component can be introduced here" explicit and independent of
-   *      the regex, and is the sanitize-before-sink step SAST tools require.
+   *   3. Reduce to path.basename and require equality — no path component can
+   *      survive to the resolve call.
    *   4. Resolve under reposRoot, then containment-check the resolved path.
    */
   private resolveProjectPath(projectId: string): string {
@@ -59,6 +58,15 @@ export class StorageService {
       throw new BadRequestException('Invalid projectId: path component rejected');
     }
 
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+    // Justification (audited false positive): `safeId` cannot contain a path
+    // component or traversal sequence. It has passed (a) the cuid allowlist
+    // regex /^c[a-z0-9]{20,40}$/i — which admits no '/', '\', or '.', and
+    // (b) a path.basename equality check that rejects any value carrying a
+    // directory component. The resolved `candidate` is additionally
+    // containment-checked against reposRoot immediately below. Traversal is
+    // not reachable; semgrep's taint heuristic flags the projectId→resolve
+    // dataflow without modeling the intervening validation.
     const candidate = path.resolve(this.reposRoot, safeId);
 
     // Containment backstop: the resolved path must sit directly within reposRoot.
