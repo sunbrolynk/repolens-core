@@ -9,10 +9,11 @@ import * as path from 'path';
  * (storage/any-bucket/repos/{projectId}/...).
  *
  * SECURITY: every path is confined to the storage root. Project IDs are
- * validated, reduced to a bare path segment, and resolved paths are verified
- * to remain inside the root before any mkdir/rm touches the filesystem,
- * preventing path traversal via crafted IDs (e.g. "../../etc"). Deletion — the
- * most destructive op — gets the strictest containment check.
+ * validated against an allowlist format, reduced to a bare path segment, and
+ * resolved paths are verified to remain inside the root before any mkdir/rm
+ * touches the filesystem, preventing path traversal via crafted IDs
+ * (e.g. "../../etc"). Deletion — the most destructive op — gets the strictest
+ * containment check.
  */
 @Injectable()
 export class StorageService {
@@ -20,10 +21,15 @@ export class StorageService {
   private readonly storageRoot: string;
   private readonly reposRoot: string;
 
-  // Project IDs are cuid()-shaped per the Prisma schema (@default(cuid())):
-  // a leading 'c' followed by base36. We allowlist that shape and reject
-  // anything containing path separators, dots, or other unexpected chars.
-  private static readonly PROJECT_ID_PATTERN = /^c[a-z0-9]{20,40}$/i;
+  // Project IDs in this codebase are UUID v4 (8-4-4-4-12 hex with hyphens),
+  // e.g. "785d3bbb-2985-40f3-a987-bd7d4bdba9fe". We also accept cuid()-shaped
+  // IDs (leading 'c' + base36) for forward-compatibility with the Prisma
+  // schema default. Both formats contain ONLY [a-z0-9-]: no path separators,
+  // no dots, no traversal sequences — which is the property that matters for
+  // path safety. Anything else is rejected.
+  private static readonly UUID_PATTERN =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  private static readonly CUID_PATTERN = /^c[a-z0-9]{20,40}$/i;
 
   constructor(private readonly configService: ConfigService) {
     // Match S3Service exactly: <cwd>/storage/any-bucket, files under repos/.
@@ -37,7 +43,7 @@ export class StorageService {
    *
    * Defense in depth, in order:
    *   1. Type/empty check.
-   *   2. cuid-shape allowlist regex (no separators/dots can match).
+   *   2. Allowlist format check (UUID or cuid) — neither admits '/', '\', or '.'.
    *   3. Reduce to path.basename and require equality — no path component can
    *      survive to the resolve call.
    *   4. Resolve under reposRoot, then containment-check the resolved path.
@@ -46,13 +52,17 @@ export class StorageService {
     if (typeof projectId !== 'string' || projectId.length === 0) {
       throw new BadRequestException('Invalid projectId: empty');
     }
-    if (!StorageService.PROJECT_ID_PATTERN.test(projectId)) {
+
+    const isValidFormat =
+      StorageService.UUID_PATTERN.test(projectId) ||
+      StorageService.CUID_PATTERN.test(projectId);
+    if (!isValidFormat) {
       throw new BadRequestException('Invalid projectId: failed format check');
     }
 
-    // Reduce to a single, separator-free path segment. After the regex above
-    // this is already clean, but taking basename and rejecting any difference
-    // guarantees no directory component can reach path.resolve below.
+    // Reduce to a single, separator-free path segment. After the format check
+    // above this is already clean, but taking basename and rejecting any
+    // difference guarantees no directory component can reach path.resolve below.
     const safeId = path.basename(projectId);
     if (safeId !== projectId || safeId === '.' || safeId === '..') {
       throw new BadRequestException('Invalid projectId: path component rejected');
@@ -60,9 +70,9 @@ export class StorageService {
 
     // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
     // Justification (audited false positive): `safeId` cannot contain a path
-    // component or traversal sequence. It has passed (a) the cuid allowlist
-    // regex /^c[a-z0-9]{20,40}$/i — which admits no '/', '\', or '.', and
-    // (b) a path.basename equality check that rejects any value carrying a
+    // component or traversal sequence. It has passed (a) a UUID/cuid allowlist
+    // format check — both formats admit only [a-z0-9-], no '/', '\', or '.',
+    // and (b) a path.basename equality check that rejects any value carrying a
     // directory component. The resolved `candidate` is additionally
     // containment-checked against reposRoot immediately below. Traversal is
     // not reachable; semgrep's taint heuristic flags the projectId→resolve
