@@ -95,7 +95,8 @@ htmlcov/
 *.sqlite
 *.sqlite3
 dump.rdb
-storage/
+/storage/
+/api/storage/
 uploads/
 temp/
 tmp/

@@ -1,0 +1,54 @@
+# docker/docker-compose.dev.yml
+# Local development services for RepoLens (Postgres+pgvector, Redis).
+# Credentials come from docker/.env (gitignored) — NO plaintext secrets committed.
+# Bring up:  docker compose -f docker/docker-compose.dev.yml --env-file docker/.env up -d
+# Tear down: docker compose -f docker/docker-compose.dev.yml down
+# Wipe data: docker compose -f docker/docker-compose.dev.yml down -v
+
+name: repolens-dev
+
+services:
+  postgres:
+    # pgvector-enabled Postgres — required for the vector(1536) embedding column.
+    # Pinned by digest-free tag here for dev; pin to a digest before any deploy.
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set in docker/.env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in docker/.env}
+      POSTGRES_DB: ${POSTGRES_DB:?set in docker/.env}
+    ports:
+      # Bind to loopback only — never expose the DB on the LAN in dev.
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Require a password even in dev so a stray bind can't be used anonymously.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set in docker/.env}", "--save", "60", "1"]
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  pgdata:
+  redisdata:
