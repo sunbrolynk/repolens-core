@@ -1,20 +1,26 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
-import { Queue, Worker, QueueEvents } from 'bullmq';
-import Redis from 'ioredis';
+import { Queue, Worker, QueueEvents, ConnectionOptions } from 'bullmq';
 
 @Injectable()
 export class QueueService implements OnModuleDestroy {
-  private redis: Redis;
+  // Connection is passed as options, not a constructed ioredis instance, so
+  // BullMQ builds its own client from its bundled ioredis. This avoids the
+  // dual-ioredis type mismatch (root 5.11.x vs bullmq's nested 5.10.x) and
+  // lets each Queue/Worker own its connection lifecycle.
+  private readonly connection: ConnectionOptions;
   private queues: Map<string, Queue> = new Map();
   private workers: Map<string, Worker> = new Map();
   private events: Map<string, QueueEvents> = new Map();
 
   constructor() {
-    this.redis = new Redis({
+    this.connection = {
       host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
+      port: parseInt(process.env.REDIS_PORT || '6379', 10),
+      // Honor REDIS_PASSWORD — our dev Redis requires auth. undefined when unset
+      // so it stays compatible with passwordless Redis.
+      password: process.env.REDIS_PASSWORD || undefined,
       maxRetriesPerRequest: null, // Required by BullMQ
-    });
+    };
 
     // Initialize queues
     this.createQueue('webhook-events');
@@ -29,11 +35,9 @@ export class QueueService implements OnModuleDestroy {
     if (this.queues.has(name)) {
       return this.queues.get(name)!;
     }
-
     const queue = new Queue(name, {
-      connection: this.redis,
+      connection: this.connection,
     });
-
     this.queues.set(name, queue);
     return queue;
   }
@@ -42,9 +46,8 @@ export class QueueService implements OnModuleDestroy {
     if (this.workers.has(name)) {
       return this.workers.get(name)!;
     }
-
     const worker = new Worker(name, processor, {
-      connection: this.redis,
+      connection: this.connection,
       concurrency: options.concurrency ?? 5, // Default to 5 if not specified
       lockDuration: 600000, // 10 minutes lock to handle massive project matchings
       stalledInterval: 30000,
@@ -57,7 +60,6 @@ export class QueueService implements OnModuleDestroy {
         age: 86400,
       },
     });
-
     this.workers.set(name, worker);
     return worker;
   }
@@ -67,7 +69,6 @@ export class QueueService implements OnModuleDestroy {
     if (!queue) {
       throw new Error(`Queue ${queueName} not found`);
     }
-
     const job = await queue.add(queueName, jobData, {
       attempts: 3,
       backoff: {
@@ -76,7 +77,6 @@ export class QueueService implements OnModuleDestroy {
       },
       ...options,
     });
-
     return job;
   }
 
@@ -94,17 +94,17 @@ export class QueueService implements OnModuleDestroy {
   }
 
   async onModuleDestroy() {
-    // Close all workers
-    for (const [name, worker] of this.workers) {
+    // Close all workers (each owns its own BullMQ-managed connection)
+    for (const [, worker] of this.workers) {
       await worker.close();
     }
-
     // Close all queues
-    for (const [name, queue] of this.queues) {
+    for (const [, queue] of this.queues) {
       await queue.close();
     }
-
-    // Close Redis connection
-    await this.redis.quit();
+    // Close any QueueEvents instances
+    for (const [, events] of this.events) {
+      await events.close();
+    }
   }
 }
