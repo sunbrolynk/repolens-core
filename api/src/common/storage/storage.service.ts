@@ -9,10 +9,10 @@ import * as path from 'path';
  * (storage/any-bucket/repos/{projectId}/...).
  *
  * SECURITY: every path is confined to the storage root. Project IDs are
- * validated and resolved paths are verified to remain inside the root before
- * any mkdir/rm touches the filesystem, preventing path traversal via crafted
- * IDs (e.g. "../../etc"). Deletion — the most destructive op — gets the
- * strictest containment check.
+ * validated, reduced to a bare path segment, and resolved paths are verified
+ * to remain inside the root before any mkdir/rm touches the filesystem,
+ * preventing path traversal via crafted IDs (e.g. "../../etc"). Deletion — the
+ * most destructive op — gets the strictest containment check.
  */
 @Injectable()
 export class StorageService {
@@ -34,6 +34,14 @@ export class StorageService {
   /**
    * Validate a project ID and return the absolute, traversal-safe path to its
    * directory. Throws BadRequestException on any invalid or escaping input.
+   *
+   * Defense in depth, in order:
+   *   1. Type/empty check.
+   *   2. cuid-shape allowlist regex (no separators/dots can match).
+   *   3. Reduce to path.basename and require it to equal the input — this makes
+   *      "no path component can be introduced here" explicit and independent of
+   *      the regex, and is the sanitize-before-sink step SAST tools require.
+   *   4. Resolve under reposRoot, then containment-check the resolved path.
    */
   private resolveProjectPath(projectId: string): string {
     if (typeof projectId !== 'string' || projectId.length === 0) {
@@ -43,10 +51,18 @@ export class StorageService {
       throw new BadRequestException('Invalid projectId: failed format check');
     }
 
-    const candidate = path.resolve(this.reposRoot, projectId);
+    // Reduce to a single, separator-free path segment. After the regex above
+    // this is already clean, but taking basename and rejecting any difference
+    // guarantees no directory component can reach path.resolve below.
+    const safeId = path.basename(projectId);
+    if (safeId !== projectId || safeId === '.' || safeId === '..') {
+      throw new BadRequestException('Invalid projectId: path component rejected');
+    }
 
-    // Containment check: the resolved path must sit directly within reposRoot.
-    // Guards against traversal even if the pattern were ever loosened.
+    const candidate = path.resolve(this.reposRoot, safeId);
+
+    // Containment backstop: the resolved path must sit directly within reposRoot.
+    // Guards against traversal even if an earlier check were ever loosened.
     const rel = path.relative(this.reposRoot, candidate);
     if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(path.sep)) {
       throw new BadRequestException('Invalid projectId: path escapes storage root');
