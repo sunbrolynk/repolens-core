@@ -207,7 +207,7 @@ export default function ProjectsPage() {
                           <label className='text-muted-foreground text-xs font-medium uppercase'>Storage Type</label>
                           <p className='text-card-foreground font-semibold capitalize flex items-center gap-2'>
                             <HardDriveIcon className='h-4 w-4 text-primary' />
-                            {selectedProject.source_config.type}
+                            {selectedProject.source_config?.type}
                           </p>
                         </div>
                         <div className='space-y-1'>
@@ -229,8 +229,8 @@ export default function ProjectsPage() {
                           <div className='bg-background/80 border-border flex items-center gap-3 rounded-xl border p-4 font-mono text-sm shadow-inner'>
                              <FolderIcon className='text-primary h-4 w-4 shrink-0' />
                              <span className='truncate text-primary'>
-                              {selectedProject.source_config.type === 'local' && selectedProject.source_config.local_path}
-                              {selectedProject.source_config.type === 'github' && selectedProject.source_config.github_url}
+                              {selectedProject.source_config?.type === 'local' && selectedProject.source_config?.local_path}
+                              {selectedProject.source_config?.type === 'github' && selectedProject.source_config?.github_url}
                              </span>
                           </div>
                         </div>

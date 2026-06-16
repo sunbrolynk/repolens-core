@@ -71,7 +71,29 @@ export class ProjectsService {
         });
     }
 
-    return project;
+    const sc = createDto.source_config;
+
+    // Return the same mapped shape as findAll/findOne so the frontend always
+    // gets a populated source_config. The repository is created asynchronously
+    // above, so derive source_config from the request rather than the (empty)
+    // repositories relation; a later refresh reflects the cloned repo.
+    return {
+      project_id: project.id,
+      name: project.name,
+      description: project.description,
+      status: 'ready',
+      source_config: {
+        type: sc ? (sc.type === 'local' ? 'local' : 'github') : 'local',
+        local_path: sc?.local_path ?? null,
+        github_url: sc?.github_url ?? sc?.url ?? null,
+        branch: sc?.branch ?? 'main',
+      },
+      file_count: 0,
+      analysis_count: 0,
+      created_at: project.createdAt.toISOString(),
+      updated_at: project.updatedAt.toISOString(),
+      last_analyzed: null,
+    };
   }
 
   async findAll() {

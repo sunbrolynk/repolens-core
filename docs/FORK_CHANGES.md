@@ -79,14 +79,22 @@
      `frontend/src/app/components/ProjectsSidebar.tsx`, `frontend/src/app/dashboard/analyze/page.tsx`
    - Upstream: **maybe** — the fetch-loop fix and shared context are generally useful.
 
-2. **`ProjectsPage` crash "Cannot read properties of undefined (reading 'type')" on a non-OK
-   projects fetch.** `getProjects` throws on `!res.ok` and the failure was swallowed, leaving the
-   grid to render against missing data. The provider now centralizes the `catch` into an `error`
-   state, and both the projects grid and the analyze page render an explicit error/retry state
-   instead of crashing or showing a misleading empty state. `getProjects` still throws on `!res.ok`
-   (control not weakened).
-   - Files: as above.
-   - Upstream: **maybe** (same as #1).
+2. **`ProjectsPage` crash "Cannot read properties of undefined (reading 'type')".** Two distinct
+   triggers, both fixed:
+   - *Failed fetch path:* `getProjects` throws on `!res.ok` and the failure was swallowed. The
+     provider now centralizes the `catch` into an `error` state, and both the projects grid and
+     the analyze page render an explicit error/retry state instead of crashing or showing a
+     misleading empty state. `getProjects` still throws on `!res.ok` (control not weakened).
+   - *Root cause (the actual reproducer):* `ProjectsService.create()` returned the **raw Prisma
+     entity** (no `source_config`, `createdAt` instead of `created_at`), unlike `findAll`/`findOne`
+     which return a mapped DTO. Creating a project set that partial object as `selectedProject`,
+     and the detail view's `selectedProject.source_config.type` crashed. Fixed `create()` to return
+     the same mapped shape (`source_config` derived from the submitted DTO, since the repo is cloned
+     asynchronously). Added a render-boundary guard (`source_config?.type`) in `ProjectsPage` so a
+     partial shape can never white-screen the dashboard.
+   - Files: `api/src/projects/projects.service.ts`, `api/src/projects/projects.controller.ts`,
+     plus the frontend files above.
+   - Upstream: **YES** — the inconsistent `create()` response shape is an upstream bug.
 
 ### 2026-06-15 — CI pipeline live + enforced, SAST triage begun
 **PRs:** #2 (baseline), #4/#5 (CI bootstrap), #6 (storage SAST doc)
