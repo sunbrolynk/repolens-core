@@ -5,6 +5,7 @@ export const runtime = 'edge';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRepolensApi, Project } from '../../utils/api';
+import { useProjects } from '../../context/ProjectsProvider';
 import MainTabs from '../../components/MainTabs';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import AnalysisTimeline, {
@@ -29,17 +30,17 @@ import toast from 'react-hot-toast';
 
 export default function AnalyzePage() {
   const router = useRouter();
-  const {
-    getProjects,
-    analyzeProject,
-    getAnalysisProgress,
-    getAnalysisResult,
-  } = useRepolensApi();
+  const { analyzeProject, getAnalysisProgress, getAnalysisResult } =
+    useRepolensApi();
   const { graph, isLoading, error } = useGraphData();
-  const [projects, setProjects] = useState<Project[]>([]);
+  const {
+    projects,
+    loading: loadingProjects,
+    error: projectsError,
+    refresh: refreshProjects,
+  } = useProjects();
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [analyzingProject, setAnalyzingProject] = useState<string | null>(null);
-  const [loadingProjects, setLoadingProjects] = useState(true);
   const [analysisProgress, setAnalysisProgress] = useState<any>(null);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(
@@ -56,7 +57,6 @@ export default function AnalyzePage() {
   };
 
   useEffect(() => {
-    loadProjects();
     initializeAnalysisSteps();
     restoreAnalysisState();
   }, []);
@@ -317,7 +317,7 @@ export default function AnalyzePage() {
             }
 
             // Reload projects to get updated analysis count
-            loadProjects();
+            refreshProjects();
           } catch (error) {
             console.error('Failed to get analysis result:', error);
           }
@@ -337,19 +337,6 @@ export default function AnalyzePage() {
     return () => clearInterval(interval);
   }, [analysisId, analyzingProject, selectedProject]);
 
-  const loadProjects = async () => {
-    try {
-      setLoadingProjects(true);
-      const response = await getProjects();
-      setProjects(response.projects || []);
-    } catch (error) {
-      console.error('Failed to load projects:', error);
-      toast.error('Failed to load projects');
-    } finally {
-      setLoadingProjects(false);
-    }
-  };
-
   const handleAnalyzeProject = async (project: Project) => {
     try {
       setAnalyzingProject(project.project_id);
@@ -364,14 +351,8 @@ export default function AnalyzePage() {
       setAnalysisId(result.analysis_id);
       toast.success(`Analysis started for ${project.name}`);
 
-      // Update project status locally in the projects list
-      setProjects((prev) =>
-        prev.map((p) =>
-          p.project_id === project.project_id
-            ? { ...p, status: 'analyzing' }
-            : p,
-        ),
-      );
+      // Reflect the newly-started analysis; status is derived server-side.
+      refreshProjects();
     } catch (error) {
       console.error('Failed to start analysis:', error);
       toast.error(
@@ -475,6 +456,28 @@ export default function AnalyzePage() {
       <div className='flex min-h-[60vh] flex-col items-center justify-center'>
         <LoadingSpinner />
         <p className='text-muted-foreground mt-4'>Loading projects...</p>
+      </div>
+    );
+  }
+
+  if (projectsError && projects.length === 0) {
+    return (
+      <div className='flex min-h-[60vh] flex-col items-center justify-center'>
+        <div className='text-center'>
+          <XCircleIcon className='mx-auto mb-4 h-16 w-16 text-red-500' />
+          <h1 className='text-foreground mb-2 font-serif text-3xl font-bold tracking-tighter md:text-4xl'>
+            Couldn&apos;t load projects
+          </h1>
+          <p className='text-muted-foreground mb-6 max-w-xl text-sm md:text-base'>
+            {projectsError}
+          </p>
+          <button
+            onClick={() => refreshProjects()}
+            className='bg-primary hover:bg-primary/80 text-primary-foreground flex min-h-[44px] items-center justify-center rounded-lg px-6 py-3 font-semibold transition'
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }

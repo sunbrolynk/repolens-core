@@ -18,7 +18,7 @@ export class ProjectsController {
 
     try {
       const project = await this.projectsService.create(createDto);
-      this.logger.log(`Project created successfully: ${project.id}`);
+      this.logger.log(`Project created successfully: ${project.project_id}`);
       return project;
     } catch (error) {
       this.logger.error(`Failed to create project:`, error);

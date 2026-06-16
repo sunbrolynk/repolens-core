@@ -22,6 +22,7 @@ import { useRepolensApi } from '../utils/api';
 import { useApi } from '../context/ApiProvider';
 import ProtectedRoute from '../components/ProtectedRoute';
 import DashboardNavbar from '../components/DashboardNavbar';
+import { ProjectsProvider } from '../context/ProjectsProvider';
 
 interface SidebarItem {
   id: string;
@@ -438,7 +439,9 @@ export default function DashboardLayout({
 
         {/* Main Content - Scrollable */}
         <main className='ml-0 flex flex-1 flex-col overflow-auto md:ml-64'>
-          <div className='flex-1 p-4 sm:p-6'>{children}</div>
+          <div className='flex-1 p-4 sm:p-6'>
+            <ProjectsProvider>{children}</ProjectsProvider>
+          </div>
         </main>
       </div>
     </ProtectedRoute>

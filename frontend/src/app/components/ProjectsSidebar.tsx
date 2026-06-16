@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRepolensApi, Project } from '../utils/api';
+import { useProjects } from '../context/ProjectsProvider';
 import {
   FolderIcon,
   PlusIcon,
@@ -30,31 +31,9 @@ export default function ProjectsSidebar({
   selectedProjectId,
   onCreateProject,
 }: ProjectsSidebarProps) {
-  const { getProjects, deleteProject, analyzeProject } = useRepolensApi();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { deleteProject, analyzeProject } = useRepolensApi();
+  const { projects, loading, error, refresh } = useProjects();
   const [expandedProject, setExpandedProject] = useState<string | null>(null);
-
-  useEffect(() => {
-    loadProjects();
-  }, []);
-
-  const loadProjects = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await getProjects();
-      const projectsList = response?.projects || [];
-      setProjects(projectsList);
-    } catch (err) {
-      setError('Failed to load projects');
-      console.error('Failed to load projects:', err);
-      setProjects([]); // Set empty array on error
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleDeleteProject = async (
     projectId: string,
@@ -98,7 +77,7 @@ export default function ProjectsSidebar({
   const performDeleteProject = async (projectId: string) => {
     try {
       await deleteProject(projectId);
-      await loadProjects();
+      await refresh();
       toast.success('Project deleted successfully');
     } catch (err) {
       toast.error('Failed to delete project');
@@ -110,7 +89,7 @@ export default function ProjectsSidebar({
     try {
       await analyzeProject(projectId);
       toast.success('Analysis started successfully');
-      await loadProjects(); // Refresh to show updated status
+      await refresh(); // Refresh to show updated status
     } catch (err) {
       toast.error('Failed to start analysis');
       console.error('Failed to start analysis:', err);
@@ -187,7 +166,7 @@ export default function ProjectsSidebar({
         <div className='mb-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3'>
           <p className='text-sm text-red-400'>{error}</p>
           <button
-            onClick={loadProjects}
+            onClick={() => refresh()}
             className='mt-1 text-xs text-red-400 underline hover:text-red-300'
           >
             Retry

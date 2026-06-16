@@ -2,8 +2,9 @@
 
 export const runtime = 'edge';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRepolensApi, Project } from '../../utils/api';
+import { useProjects } from '../../context/ProjectsProvider';
 import ProjectsSidebar from '../../components/ProjectsSidebar';
 import ProjectCreationModal from '../../components/ProjectCreationModal';
 import {
@@ -24,37 +25,9 @@ export default function ProjectsPage() {
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  // Fetch projects initially to populate the grid
-  const { getProjects, analyzeProject } = useRepolensApi();
-  
-  const loadProjects = async (silent = false) => {
-    try {
-      if (!silent) setLoading(true);
-      const response = await getProjects();
-      setProjects(response?.projects || []);
-    } catch (error) {
-      console.error('Failed to load projects:', error);
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadProjects();
-    
-    // Set up polling for active analyses
-    const interval = setInterval(() => {
-      const hasActiveAnalysis = projects.some(p => p.status === 'analyzing');
-      if (hasActiveAnalysis) {
-        loadProjects(true); // Silent refresh
-      }
-    }, 5000); // Poll every 5 seconds if something is analyzing
-
-    return () => clearInterval(interval);
-  }, [projects]); // Changed dependency to projects to pick up status changes
+  const { projects, loading, error, refresh } = useProjects();
+  const { analyzeProject } = useRepolensApi();
 
   const handleProjectSelect = (project: Project) => {
     setSelectedProject(project);
@@ -62,7 +35,7 @@ export default function ProjectsPage() {
 
   const handleProjectCreated = (project: Project) => {
     setSelectedProject(project);
-    loadProjects(); // Refresh the list
+    refresh();
   };
 
   const handleAnalyzeProject = async (id?: string) => {
@@ -72,7 +45,7 @@ export default function ProjectsPage() {
     try {
       setAnalysisLoading(true);
       await analyzeProject(projectId);
-      loadProjects(); // Refresh status
+      refresh();
     } catch (error) {
       console.error('Failed to start analysis:', error);
     } finally {
@@ -234,7 +207,7 @@ export default function ProjectsPage() {
                           <label className='text-muted-foreground text-xs font-medium uppercase'>Storage Type</label>
                           <p className='text-card-foreground font-semibold capitalize flex items-center gap-2'>
                             <HardDriveIcon className='h-4 w-4 text-primary' />
-                            {selectedProject.source_config.type}
+                            {selectedProject.source_config?.type}
                           </p>
                         </div>
                         <div className='space-y-1'>
@@ -256,8 +229,8 @@ export default function ProjectsPage() {
                           <div className='bg-background/80 border-border flex items-center gap-3 rounded-xl border p-4 font-mono text-sm shadow-inner'>
                              <FolderIcon className='text-primary h-4 w-4 shrink-0' />
                              <span className='truncate text-primary'>
-                              {selectedProject.source_config.type === 'local' && selectedProject.source_config.local_path}
-                              {selectedProject.source_config.type === 'github' && selectedProject.source_config.github_url}
+                              {selectedProject.source_config?.type === 'local' && selectedProject.source_config?.local_path}
+                              {selectedProject.source_config?.type === 'github' && selectedProject.source_config?.github_url}
                              </span>
                           </div>
                         </div>
@@ -379,6 +352,24 @@ export default function ProjectsPage() {
                     <div className='border-primary h-8 w-8 animate-spin rounded-full border-4 border-t-transparent'></div>
                     <span className='text-lg font-bold'>Loading Projects</span>
                   </div>
+                </div>
+              ) : error ? (
+                <div className='bg-card/50 border-border border-dashed flex h-full flex-col items-center justify-center rounded-3xl border-4 p-12 text-center'>
+                  <div className='bg-red-500/10 rounded-full p-8 mb-6'>
+                    <AlertCircleIcon className='h-16 w-16 text-red-500' />
+                  </div>
+                  <h2 className='text-card-foreground mb-2 text-3xl font-black tracking-tight'>
+                    Couldn&apos;t load projects
+                  </h2>
+                  <p className='text-muted-foreground mb-8 max-w-sm font-medium'>
+                    {error}
+                  </p>
+                  <button
+                    onClick={() => refresh()}
+                    className='bg-primary hover:bg-primary/80 text-primary-foreground rounded-xl px-8 py-3 font-bold shadow-lg shadow-primary/20 transition-all active:scale-95'
+                  >
+                    Retry
+                  </button>
                 </div>
               ) : filteredProjects.length > 0 ? (
                 <div className='grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3'>

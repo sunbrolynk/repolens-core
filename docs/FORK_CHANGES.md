@@ -3,7 +3,7 @@
 **Fork:** `sunbrolynk/repolens-core` (upstream: `otobongfp/repolens-core`)
 **License:** AGPL-3.0 (copyleft — modifications must stay AGPL; network use triggers source-disclosure obligation)
 **Goal:** Self-host RepoLens on Proxmox/Portainer with a free-tier LLM backend (Gemini 2.5 Flash primary), full security hardening, professional backend standards.
-**Last updated:** 2026-06-15
+**Last updated:** 2026-06-16
 
 ---
 
@@ -60,6 +60,41 @@
 ---
 
 ## Change Log
+
+### 2026-06-16 — Projects dashboard: fix 429 storm + crash on failed fetch
+
+1. **`GET /api/projects` 429 (ThrottlerException) on dashboard load — deduplicated the
+   redundant fetches.** Root cause was two-fold: (a) `ProjectsPage`'s polling `useEffect`
+   depended on `[projects]` while its loader called `setProjects(...)` with a fresh array each
+   run, so every fetch re-triggered the effect — an unbounded fetch loop that tripped
+   `@nestjs/throttler` within seconds; (b) `ProjectsPage`, `ProjectsSidebar`, and the analyze
+   page each fetched projects independently. Added a `ProjectsProvider` context
+   (`frontend/src/app/context/ProjectsProvider.tsx`) that fetches once, owns the
+   analyzing-status poll with a stable callback (latest fn/state held in refs, so effects don't
+   re-subscribe), and exposes `{ projects, loading, error, refresh }`. Mounted it in the
+   dashboard layout (persists across route navigation), and switched the three consumers to it.
+   The server-side throttler limits were left unchanged.
+   - Files: `frontend/src/app/context/ProjectsProvider.tsx`,
+     `frontend/src/app/dashboard/layout.tsx`, `frontend/src/app/dashboard/projects/page.tsx`,
+     `frontend/src/app/components/ProjectsSidebar.tsx`, `frontend/src/app/dashboard/analyze/page.tsx`
+   - Upstream: **maybe** — the fetch-loop fix and shared context are generally useful.
+
+2. **`ProjectsPage` crash "Cannot read properties of undefined (reading 'type')".** Two distinct
+   triggers, both fixed:
+   - *Failed fetch path:* `getProjects` throws on `!res.ok` and the failure was swallowed. The
+     provider now centralizes the `catch` into an `error` state, and both the projects grid and
+     the analyze page render an explicit error/retry state instead of crashing or showing a
+     misleading empty state. `getProjects` still throws on `!res.ok` (control not weakened).
+   - *Root cause (the actual reproducer):* `ProjectsService.create()` returned the **raw Prisma
+     entity** (no `source_config`, `createdAt` instead of `created_at`), unlike `findAll`/`findOne`
+     which return a mapped DTO. Creating a project set that partial object as `selectedProject`,
+     and the detail view's `selectedProject.source_config.type` crashed. Fixed `create()` to return
+     the same mapped shape (`source_config` derived from the submitted DTO, since the repo is cloned
+     asynchronously). Added a render-boundary guard (`source_config?.type`) in `ProjectsPage` so a
+     partial shape can never white-screen the dashboard.
+   - Files: `api/src/projects/projects.service.ts`, `api/src/projects/projects.controller.ts`,
+     plus the frontend files above.
+   - Upstream: **YES** — the inconsistent `create()` response shape is an upstream bug.
 
 ### 2026-06-15 — CI pipeline live + enforced, SAST triage begun
 **PRs:** #2 (baseline), #4/#5 (CI bootstrap), #6 (storage SAST doc)
